@@ -107,8 +107,8 @@ int main() {
             Ray r(camera_origin, ray_direction);
             if (S.intersect(r)) {
                 image[(i * W + j) * 3 + 0] = 255;
-                image[(i * W + j) * 3 + 1] = 0;
-                image[(i * W + j) * 3 + 2] = 0;
+                image[(i * W + j) * 3 + 1] = 255;
+                image[(i * W + j) * 3 + 2] = 255;
             }
  
             
