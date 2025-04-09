@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/sixtinelyonnet/Documents/Polytechnique/Semester6/CSE306/Start/first_code'
+relocations:     []
+...
