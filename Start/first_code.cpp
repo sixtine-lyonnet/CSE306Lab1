@@ -262,22 +262,44 @@ class Scene {
                     Vector albedo = objects[id].albedo;
                     Vector omega_i = ray.u; // incoming ray;
                     Vector tangentialComponent = (n1 / n2) * (omega_i - dot(omega_i, N) * N); // formula from slides
-                    double D = 1 - std::pow(n1/n2, 2)*(1-std::pow(dot(omega_i, N), 2)); // formula from slides // make sure stuff in 
+                    double D = 1. - std::pow(n1/n2, 2)*(1. - std::pow(dot(omega_i, N), 2)); // formula from slides // make sure stuff in 
                     Vector normalComponent;
-                    if (D < 0) {
-                        // consider it to be a mirror (copy 3 lines)
+                    if (D <= 0. ) {
+                        // consider it to be a mirror
                         // normalComponent = -sqrt(-D) * N;
-                        Vector reflectDir = ray.u - 2 * dot(ray.u, N) * N;
-                        Ray reflectedRay(P + 0.00001 * N, reflectDir);
+                        Vector reflectDir = ray.u - (2 * dot(ray.u, N) * N);
+                        Ray reflectedRay(P + 1e-4 * N, reflectDir);
                         return getColor(reflectedRay, bounce_number-1, scene, light_position, I);
                     }
                     else {
                         normalComponent = -sqrt(D)*N;
                         Vector transmittedDirection = normalComponent + tangentialComponent; //
                         transmittedDirection.normalize();
-                        Ray transmittedRay(P - 1e-4 * N, transmittedDirection); // go inside object (make sure you don't interest with same border)
-                        Vector transmittedColor = getColor(transmittedRay, bounce_number-1, scene, light_position, I); //
-                        return transmittedColor;
+
+                        // Fresnel's law
+                        double k0 = pow(n1 - n2, 2) / pow(n1 + n2, 2);
+                        double R = k0 + (1 - k0) * pow(1 - abs(dot(N, omega_i)), 5);
+                        double T = 1- R;
+
+                        double u = uniform(engine); // random number between 0 and 1
+                        if (u < R) {
+                            // launch a reflection ray
+                            Vector reflectDir = ray.u - (2 * dot(ray.u, N) * N);
+                            Ray reflectedRay(P + 1e-4 * N, reflectDir);
+                            return getColor(reflectedRay, bounce_number-1, scene, light_position, I);
+                        }
+                        else {
+                            // launch a refraction ray
+                            Ray refracted_ray = Ray(P, transmittedDirection);
+                            return getColor(refracted_ray, bounce_number - 1, scene, light_position, I);
+                        }
+
+                        // Without Fresnel's law
+                        // Ray transmittedRay(P - 1e-4 * N, transmittedDirection); // go inside object (make sure you don't interest with same border)
+                        // Vector transmittedColor = getColor(transmittedRay, bounce_number-1, scene, light_position, I); //
+                        // return transmittedColor;
+
+
                     }                    
                 }
 
@@ -341,6 +363,7 @@ int main() {
     Vector albedo(0.5, 0.5, 0.5); // grey sphere
     double I = 1E5; // intensity
     Vector light_position(-10, 20, 40);
+    int nb_rays_per_pixel = 20;
     
     Sphere S1(Vector(0,0,1000), 940, Vector(0.9, 0.4, 0.3), false, false); // wall behind camera wall
     Sphere S2(Vector(0,-1000,0), 990, Vector(0.3, 0.4, 0.7), false, false); // floor
@@ -380,7 +403,7 @@ int main() {
                 rand_dir = rand_dir - camera_origin;
                 rand_dir.normalize();
                 Ray ray(camera_origin, rand_dir);
-                pixelColor = pixelColor + scene.getColor(ray, 3, scene, light_position, I);
+                pixelColor = pixelColor + scene.getColor(ray, nb_rays_per_pixel, scene, light_position, I);
             }
             Vector color = pixelColor;
             // Vector color = scene.getColor(r, 2, scene, light_position, I);
