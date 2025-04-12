@@ -111,6 +111,16 @@ public:
     Vector u;
 };
 
+class Object {
+    public:
+        Object(const Vector& albedo = Vector(1., 1., 1.), bool isMirror = false, bool isTransparent = false): albedo(albedo), isMirror(isMirror), isTransparent(isTransparent) {}
+        virtual bool intersect(const Ray& r, Vector &P, Vector&N, double &t) const = 0;
+
+        Vector albedo;
+        bool isMirror;
+        bool isTransparent;
+};
+
 // _________________________________________________________________________________________________________________________________________________
 // This code was taken from: https://pastebin.com/CAgp9r15
 
@@ -320,19 +330,23 @@ public:
 
 // _________________________________________________________________________________________________________________________________________________
  
-class Sphere {
+class Sphere : public Object {
 public:
-    Sphere(const Vector& C, double R, Vector albedo, bool is_T, bool is_M, bool is_H) : C(C), R(R), albedo(albedo), transparent(is_T), mirror(is_M), is_hollow(is_H) {};
-    Sphere(const Vector& C, double R, Vector albedo, bool is_T, bool is_M) : C(C), R(R), albedo(albedo), transparent(is_T), mirror(is_M), is_hollow(false) {};
+    Sphere(const Vector& C, double R, Vector albedo, bool isTransparent, bool isMirror, bool isHollow) 
+        : Object(albedo, isMirror, isTransparent), C(C), R(R), is_hollow(isHollow) {}
+
+    Sphere(const Vector& C, double R, Vector albedo, bool isTransparent, bool isMirror) 
+        : Object(albedo, isMirror, isTransparent), C(C), R(R), is_hollow(false) {}
+    // Sphere(const Vector& C, double R, Vector albedo, bool isTransparent, bool isMirror, bool isHollow) : C(C), R(R), Object(albedo, isMirror, isTransparent), is_hollow(isHollow) {}; // , bool is_H) : C(C), R(R), albedo(albedo), transparent(is_T), mirror(is_M), is_hollow(is_H) {};
+    // Sphere(const Vector& C, double R, Vector albedo, bool is_T, bool is_M) : C(C), R(R), Object(albedo, isMirror, isTransparent), is_hollow(false) {}; // albedo(albedo), transparent(is_T), mirror(is_M), is_hollow(false) {};
     Vector C;
     double R;
-    // double t;
-    Vector albedo;
-    bool transparent;
-    bool mirror;
+    // Vector albedo;
+    // bool transparent;
+    // bool mirror;
     bool is_hollow;
 
-    bool intersect(const Ray& r, Vector &P, Vector &N, double &t) { // here, returned by reference but can do something else
+    bool intersect(const Ray& r, Vector &P, Vector &N, double &t) const override { // here, returned by reference but can do something else
         double delta = sqr(dot(r.u, r.origin-C)) - ((r.origin-C).norm2() - sqr(R)); // discriminant formula from slides
         if (delta < 0) {
             return false; // we only wants points in front of us?
@@ -373,13 +387,15 @@ class Intersection {
 
 class Scene {
     public:
-        Scene(std::vector<Sphere> obj) : objects(obj) {};
-        
-        std::vector<Sphere> objects;
+        // Scene(std::vector<Sphere> obj) : objects(obj) {};
+        Scene(std::vector<Object *> obj) : objects(obj) {};
+
+        // std::vector<Sphere> objects;
+        std::vector<Object *> objects;
         // add albedo
         // add light color?
 
-        void add(const Sphere &s) {
+        void add(Sphere *s) {
             objects.push_back(s);
         }
 
@@ -392,7 +408,7 @@ class Scene {
                 Vector localN, localP; // values for current local object
                 double localt;
 
-                if (objects[i].intersect(r, localP, localN, localt)) {
+                if (objects[i]->intersect(r, localP, localN, localt)) {
                     result = true;
                     if (localt < closest_t) {
                         N = localN;
@@ -447,14 +463,14 @@ class Scene {
             Vector color;
 
             if (intersect(ray, P, N, t, id)) {
-                if (objects[id].mirror) {
+                if (objects[id]->isMirror) {
                     // Ray reflected_ray = ...;
                     Vector reflectDir = ray.u - 2 * dot(ray.u, N) * N;
                     Ray reflectedRay(P + 0.00001 * N, reflectDir);
                     return getColor(reflectedRay, bounce_number-1, scene, light_position, I);
                 }
 
-                if (objects[id].transparent) {
+                if (objects[id]->isTransparent) {
                     // Transparence
                     double n1 = 1;
                     double n2 = 1.5;
@@ -462,13 +478,15 @@ class Scene {
                         std::swap(n1, n2);
                         N = -N;
                     }
-                    if (objects[id].is_hollow) {
+                    /*
+                    if (objects[id]->is_hollow) {
                         std::swap(n1, n2);
                         N = -N;
                     }
+                    */
                     Vector lightDir = light_position - P;
                     double lightDist = lightDir.norm();
-                    Vector albedo = objects[id].albedo;
+                    Vector albedo = objects[id]->albedo;
                     Vector omega_i = ray.u; // incoming ray;
                     Vector tangentialComponent = (n1 / n2) * (omega_i - dot(omega_i, N) * N); // formula from slides
                     double D = 1. - std::pow(n1/n2, 2)*(1. - std::pow(dot(omega_i, N), 2)); // formula from slides // make sure stuff in 
@@ -533,7 +551,7 @@ class Scene {
                     }
                     Vector lightDir = light_position - P;
                     double lightDist = lightDir.norm();
-                    Vector albedo = objects[id].albedo;
+                    Vector albedo = objects[id]->albedo;
                     Vector omega_i = lightDir/lightDir.norm();
                     double dot_product = std::max(dot(N, omega_i), 0.); // make sure not negative
                     Lo = (I/(4 * PI * lightDir.norm2())) * (albedo / PI) * visibility * dot_product;
@@ -577,22 +595,22 @@ int main() {
     int H = 512;
     Vector camera_origin(0, 0, 55);
     double fov = 60 * PI / 180; // make sure radians not degrees
-    Sphere S_transparent(Vector(0,0,0), 10, Vector(0.5, 0.5, 0.5), true, false);
-    Sphere S_mirror(Vector(-20,0,0), 10, Vector(0.3, 0.5, 0.8), false, true);
-    Sphere S_transparent_hollow_outer(Vector(20,0,0), 10, Vector(0.7, 0.2, 0.5), true, false);
-    Sphere S_transparent_hollow_inner(Vector(20,0,0), 9.8, Vector(0.7, 0.2, 0.5), true, false, true);
+    Object* S_mirror = new Sphere(Vector(-20,0,0), 10, Vector(0.3, 0.5, 0.8), false, true);
+    Object* S_transparent = new Sphere(Vector(0,0,0), 10, Vector(0.5, 0.5, 0.5), true, false);
+    Object* S_transparent_hollow_outer = new Sphere(Vector(20,0,0), 10, Vector(0.7, 0.2, 0.5), true, false);
+    Object* S_transparent_hollow_inner = new Sphere(Vector(20,0,0), 9.8, Vector(0.7, 0.2, 0.5), true, false, true);
     Vector albedo(0.5, 0.5, 0.5); // grey sphere
     double I = 1E5; // intensity
     Vector light_position(-10, 20, 40);
     int nb_rays_per_pixel = 4;
     
-    Sphere S1(Vector(0,0,1000), 940, Vector(0.9, 0.4, 0.3), false, false); // wall behind camera wall
-    Sphere S2(Vector(0,-1000,0), 990, Vector(0.3, 0.4, 0.7), false, false); // floor
-    Sphere S3(Vector(0,0,-1000), 940, Vector(0.4, 0.8, 0.7), false, false); // back wall
-    Sphere S4(Vector(0,1000,0), 940, Vector(0.2, 0.5, 0.9), false, false); // ceiling
-    Sphere S5(Vector(-1000,0,0), 940, Vector(0.9, 0.2, 0.9), false, false); // left wall
-    Sphere S6(Vector(1000,0,0), 940, Vector(0.6, 0.5, 0.1), false, false); // right wall
-    std::vector<Sphere> objects; // = scene.objects;
+    Object* S1 = new Sphere(Vector(0,0,1000), 940, Vector(0.9, 0.4, 0.3), false, false); // wall behind camera wall
+    Object* S2 = new Sphere(Vector(0,-1000,0), 990, Vector(0.3, 0.4, 0.7), false, false); // floor
+    Object* S3 = new Sphere(Vector(0,0,-1000), 940, Vector(0.4, 0.8, 0.7), false, false); // back wall
+    Object* S4 = new Sphere(Vector(0,1000,0), 940, Vector(0.2, 0.5, 0.9), false, false); // ceiling
+    Object* S5 = new Sphere(Vector(-1000,0,0), 940, Vector(0.9, 0.2, 0.9), false, false); // left wall
+    Object* S6 = new Sphere(Vector(1000,0,0), 940, Vector(0.6, 0.5, 0.1), false, false); // right wall
+    std::vector<Object*> objects; // = scene.objects;
     objects.push_back(S_transparent);
     objects.push_back(S_mirror);
     objects.push_back(S_transparent_hollow_outer);
