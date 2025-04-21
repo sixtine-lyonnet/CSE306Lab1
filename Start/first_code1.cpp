@@ -125,7 +125,7 @@ class Intersection {
 class Object {
     public:
         Object(const Vector& albedo = Vector(1., 1., 1.), bool isMirror = false, bool isTransparent = false): albedo(albedo), isMirror(isMirror), isTransparent(isTransparent) {}
-        virtual bool intersect(const Ray& r, Vector &P, Vector&N, double &t) const = 0;
+        virtual Intersection intersect(const Ray& r) const = 0;
 
         Vector albedo;
         bool isMirror;
@@ -140,93 +140,6 @@ class Object {
 #include <stdio.h>
 #include <algorithm>
 #include <vector>
-
-class BoundingBox {
-public:
-    BoundingBox(Vector Bmin = Vector(), Vector Bmax = Vector()) : Bmin(Bmin), Bmax(Bmax) {}
-
-    Vector Bmin;
-    Vector Bmax;
-};
-
-/*
-class BVH {
-public:
-    BoundingBox box;
-    BVH* left, * right;
-
-    // Define a scale and translate function
-
-
-    void build_bvh(BVH* current, int first, int last) {
-        current->first = first;
-        current->last = last;
-        current->box = compuute_bbox(first, llast);
-        current->left = NULL;
-        current->right = NULL;
-
-        if (last-first < 5) return;
-
-        Vector diagonal = current->box.M - current->box.m;
-        int axis = 2;
-        if ((diagonal[0] >= diagonal[1]) && (diagonal[0] >= diagonal[2])) {
-            axis = 0;
-        }
-        else {
-            if ((diagonal[1] >= diagonal[0]) && (diagonal[1] >= diagonal[2])) {
-                axis = 1;
-            }
-        }
-
-        double middle = current->box.m[axis] + 0.5 * diagonal[axis];
-        int pivot = first;
-        for (int i=first; i < last; i++) {
-            double bary = vertices[indices[i].vtxi][axis] + vertices[indices[i].vtxj][axis] + vertices[indices[i].vtxk][axis];
-            if (bary < middle) {
-                std::swap(indices[i], indices[pivot]);
-                pivot++;
-            }
-        }
-        if ((pivot <=first) || (pivot >= last)) return; // if pivot is too much to the left
-
-        current->left = new BVH();
-        current->right = new BVH();
-        build_bvh(current->left, first, pivot);
-        build_bvh(current->right, pivot, last);
-    }
-
-    BoundingBox computeBbox() {
-    }
-
-    bool intersect(const Ray& r, Vector& P, Vector& N, double& t) const {
-        if (!bvh.box.intersect(r)) return false;
-
-        std::list<const BVH*> l;
-        l.push_back(&bvh);
-        while(!l.empty()) {
-            const BVH* cur = l.back();
-            l.pop_back();
-            if (cur->left) { // not a leaf
-                if (cur->left->box.intersect(r)) {
-                    l.push_back(cur->left);
-
-                }
-                if (cur->right->box.intersect(r)) {
-                    l.push_back(cur->right);
-                    
-                }
-            }
-            else {
-                // copy all the code
-                for (int i = cur->first; i < cur->last; i++) {
-                    Vector A ...
-                }
-            }
-        }
-    }
-
-};
-*/
  
 class TriangleIndices {
 public:
@@ -246,13 +159,6 @@ class TriangleMesh : public Object {
     // double refractive_index;
     // bool reflects;
 public:
-    std::vector<TriangleIndices> indices;
-    std::vector<Vector> vertices;
-    std::vector<Vector> normals;
-    std::vector<Vector> uvs;
-    std::vector<Vector> vertexcolors;
-    BoundingBox bbox;
-
     ~TriangleMesh() {}
     // TriangleMesh(double scaling_factor, Vector translation, Vector color = Vector(1., 1., 1.), double refractive_index = 1., bool reflects = false) : scaling_factor(scaling_factor), translation(translation), color(color), refractive_index(refractive_index), reflects(reflects) {};
     /*
@@ -262,7 +168,8 @@ public:
         this->isTransparent = isTransparent;
     };
     */
-    TriangleMesh(Vector albedo, double scaling_factor, Vector translation, double isMirror = false, bool isTransparent = false) : Object(albedo, isMirror, isTransparent), scaling_factor(scaling_factor), translation(translation) {};
+    TriangleMesh(double scaling_factor, Vector translation, Vector albedo, double isMirror = false, bool isTransparent = false) : Object(albedo, isMirror, isTransparent), scaling_factor(scaling_factor), translation(translation) {};
+
 
     void readOBJ(const char* obj) {
         char matfile[255];
@@ -436,81 +343,53 @@ public:
  
     }
 
-    // Compute the bounding box of the mesh
-    BoundingBox computeBbox(int starting_triangle, int ending_triangle) {
-        double minX = std::numeric_limits<double>::max();
-        double minY = std::numeric_limits<double>::max();
-        double minZ = std::numeric_limits<double>::max();
-        double maxX = std::numeric_limits<double>::min();
-        double maxY = std::numeric_limits<double>::min();
-        double maxZ = std::numeric_limits<double>::min();
-
-        for (int i=starting_triangle; i<ending_triangle; i++) {
-            auto triangle_vertices = {
-                this->vertices[this->indices[i].vtxi],
-                this->vertices[this->indices[i].vtxj],
-                this->vertices[this->indices[i].vtxk]
-            };
-            for (auto const& v : triangle_vertices) {
-                Vector Vertex = scaling_factor * v + translation;
-                minX = std::min(minX, Vertex[0]);
-                maxX = std::max(maxX, Vertex[0]);
-                minY = std::min(minY, Vertex[1]);
-                maxY = std::max(maxY, Vertex[1]);
-                minZ = std::min(minZ, Vertex[2]);
-                maxZ = std::max(maxZ, Vertex[2]);
-            }
-        }
-
-        return BoundingBox(Vector(minX, minY, minZ), Vector(maxX, maxY, maxZ));
-    }
-
-    // BoundingBoxIntersection
-
-
-
-    bool intersect(const Ray& r, Vector &P, Vector&N, double &t) const override {
+    Intersection intersect(const Ray& r) const override {
     // bool intersect(const Ray& r, Vector &P, Vector &N, double &t) {
-        t = std::numeric_limits<double>::max();
+        Vector P;
+        Vector N;
+        double t = std::numeric_limits<double>::max();
         bool has_intersection = false;
 
         for (int i = 0; i < indices.size(); i++) {
-            const Vector& A = scaling_factor * vertices[indices[i].vtxi] + translation; // put scaling and translation in a separate function
+            const Vector& A = scaling_factor * vertices[indices[i].vtxi] + translation;
             const Vector& B = scaling_factor * vertices[indices[i].vtxj] + translation;
             const Vector& C = scaling_factor * vertices[indices[i].vtxk] + translation;
 
             const Vector e1 = B - A;
             const Vector e2 = C - A;
-            //Vector localN =  scaling_factor * normals[indices[i].vtxi];
-            //localN.normalize();
-            Vector localN = cross (e1, e2);
-            //localN.normalize();
+            const Vector N = cross (e1, e2);
             // double invUN = 1. / dot(r.u, N);
             Vector AOcrossU = cross(A-r.origin, r.u);
 
-            double localt = dot(A-r.origin, localN) / dot(r.u, localN); // implement the formula from the slides
-            // if (localt < 0) continue;
-            // if (localt > t) continue;
+            double localt = dot(A-r.origin, N) / dot(r.u, N); // implement the formula from the slides
+            if (localt < 0) continue;
+            if (localt > t) continue;
 
-            double beta = dot(e2, AOcrossU) / dot(r.u, localN); // implement formula from slides
+            double beta = dot(e2, AOcrossU) / dot(r.u, N); // implement formula from slides
             // check condition < 0 || > 1
 
-            double gamma = -dot(e1, AOcrossU) / dot(r.u, localN); // implement the formula from the slides
+            double gamma = dot(e1, AOcrossU) / dot(r.u, N); // implement the formula from the slides
             //check condition <0 || > 1
 
             double alpha = 1 - beta - gamma; // implement the formula from the slides
             // check condition <0 
 
-            if (alpha >= 0.0f && alpha <= 1.0f && beta >= 0.0f && beta <= 1.0f && gamma >= 0.0f && gamma <= 1.0f && localt >= 0.0f && localt < t) {
+            if (alpha >= 0.0f && alpha <= 1.0f && beta >= 0.0f && beta <= 1.0f && gamma >= 0.0f && gamma <= 1.0f && localt > 0.0f && localt < t) {
                 t = localt;
                 P = r.origin + t * r.u;
-                N = localN;
-                N.normalize();
-                has_intersection = true;
-            }
+                Intersection intersection(true, P, N, t, -1);
+                return intersection;
+            }    
         }
-        return has_intersection;
+        Intersection intersection(false, P, N, t, -1);
+        return intersection;
     }
+ 
+    std::vector<TriangleIndices> indices;
+    std::vector<Vector> vertices;
+    std::vector<Vector> normals;
+    std::vector<Vector> uvs;
+    std::vector<Vector> vertexcolors;
     
 };
 
@@ -532,16 +411,21 @@ public:
     // bool mirror;
     bool is_hollow;
 
-    bool intersect(const Ray& r, Vector &P, Vector &N, double &t) const override { // here, returned by reference but can do something else
+    Intersection intersect(const Ray& r) const override { // here, returned by reference but can do something else
+        Vector P;
+        Vector N;
+        double t = std::numeric_limits<double>::max();
         double delta = sqr(dot(r.u, r.origin-C)) - ((r.origin-C).norm2() - sqr(R)); // discriminant formula from slides
         if (delta < 0) {
-            return false; // we only wants points in front of us?
+            Intersection intersection(false, P, N, t, -1);
+            return intersection; // we only wants points in front of us?
         }
         double x = dot(r.u, C-r.origin);
         double t1 = x - sqrt(delta);
         double t2 = x + sqrt(delta);
         if (t2 < 0) {
-            return false; // there is not intersection
+            Intersection intersection(false, P, N, t, -1);
+            return intersection; // there is not intersection
         }
         // otherwise either t1 or t2 is in front of me
         if (t1 >= 0) {
@@ -556,7 +440,8 @@ public:
         P = r.origin + t * r.u;
         N = (P-C) / (P-C).norm();
         
-        return true;
+        Intersection intersection(true, P, N, t, -1);
+        return intersection;
     }
 };
 
@@ -574,27 +459,33 @@ class Scene {
             objects.push_back(s);
         }
 
-        bool intersect(const Ray& r, Vector& P, Vector& N, double& t, int &id) {
+        Intersection intersect(const Ray& r) {
+            Vector P;
+            Vector N;
+            double t;
+            int id;
             bool result = false;
             double closest_t = std::numeric_limits<double>::max(); // maximum double so any sphere is closer initially
             
             for (int i = 0; i < objects.size(); i++) {
 
-                Vector localN, localP; // values for current local object
-                double localt;
+                // Vector localN, localP; // values for current local object
+                // double localt;
 
-                if (objects[i]->intersect(r, localP, localN, localt)) {
+                Intersection local_intersection = objects[i]->intersect(r);
+                if (local_intersection.intersected) {
                     result = true;
-                    if (localt < closest_t) {
-                        N = localN;
-                        P = localP;
-                        closest_t = localt;
-                        id = i;
+                    if (local_intersection.t < closest_t) {
+                        N = local_intersection.N;
+                        P = local_intersection.P;
+                        closest_t = local_intersection.t;
+                        id = local_intersection.index;
                     }
                 }
             }
             t = closest_t;
-            return result;
+            Intersection intersection(result, P, N, t, id);
+            return intersection;
         }
 
         /*
@@ -618,8 +509,9 @@ class Scene {
             double shadowt;
             int shadow_id;
         
-            if (scene.intersect(shadowRay, shadowP, shadowN, shadowt, shadow_id)) {
-                double intersectDist = (shadowP - P).norm();
+            Intersection scene_intersection = scene.intersect(shadowRay);
+            if (scene_intersection.intersected) {
+                double intersectDist = (shadowP - scene_intersection.P).norm();
                 if (intersectDist < lightDist) {
                     return true;
                 }
@@ -632,26 +524,27 @@ class Scene {
             if (bounce_number <= 0) {return Vector(0, 0, 0);} // ? // stop the iteration //else, decrease bounce_number
             // put nearly everything in it
 
-            Vector P, N;
-            double t; // maximum double so any sphere is closer initially;
-            int id;
+            //Vector P, N;
+            //double t; // maximum double so any sphere is closer initially;
+            //int id;
             Vector color;
 
-            if (intersect(ray, P, N, t, id)) {
-                if (objects[id]->isMirror) {
+            Intersection scene_intersection = scene.intersect(ray);
+            if (scene_intersection.intersected) {
+                if (objects[scene_intersection.index]->isMirror) {
                     // Ray reflected_ray = ...;
-                    Vector reflectDir = ray.u - 2 * dot(ray.u, N) * N;
-                    Ray reflectedRay(P + 0.00001 * N, reflectDir);
+                    Vector reflectDir = ray.u - 2 * dot(ray.u, scene_intersection.N) * scene_intersection.N;
+                    Ray reflectedRay(scene_intersection.P + 0.00001 * scene_intersection.N, reflectDir);
                     return getColor(reflectedRay, bounce_number-1, scene, light_position, I);
                 }
 
-                if (objects[id]->isTransparent) {
+                if (objects[scene_intersection.index]->isTransparent) {
                     // Transparence
                     double n1 = 1;
                     double n2 = 1.5;
-                    if (dot(ray.u, N) > 0) {
+                    if (dot(ray.u, scene_intersection.N) > 0) {
                         std::swap(n1, n2);
-                        N = -N;
+                        scene_intersection.N = - scene_intersection.N;
                     }
                     /*
                     if (objects[id]->is_hollow) {
@@ -659,35 +552,35 @@ class Scene {
                         N = -N;
                     }
                     */
-                    Vector lightDir = light_position - P;
+                    Vector lightDir = light_position - scene_intersection.P;
                     double lightDist = lightDir.norm();
-                    Vector albedo = objects[id]->albedo;
+                    Vector albedo = objects[scene_intersection.index]->albedo;
                     Vector omega_i = ray.u; // incoming ray;
-                    Vector tangentialComponent = (n1 / n2) * (omega_i - dot(omega_i, N) * N); // formula from slides
-                    double D = 1. - std::pow(n1/n2, 2)*(1. - std::pow(dot(omega_i, N), 2)); // formula from slides // make sure stuff in 
+                    Vector tangentialComponent = (n1 / n2) * (omega_i - dot(omega_i, scene_intersection.N) * scene_intersection.N); // formula from slides
+                    double D = 1. - std::pow(n1/n2, 2)*(1. - std::pow(dot(omega_i, scene_intersection.N), 2)); // formula from slides // make sure stuff in 
                     Vector normalComponent;
                     if (D <= 0. ) {
                         // consider it to be a mirror
                         // normalComponent = -sqrt(-D) * N;
-                        Vector reflectDir = ray.u - (2 * dot(ray.u, N) * N);
-                        Ray reflectedRay(P + 1e-4 * N, reflectDir);
+                        Vector reflectDir = ray.u - (2 * dot(ray.u, scene_intersection.N) * scene_intersection.N);
+                        Ray reflectedRay(scene_intersection.P + 1e-4 * scene_intersection.N, reflectDir);
                         return getColor(reflectedRay, bounce_number-1, scene, light_position, I);
                     }
                     else {
-                        normalComponent = -sqrt(D)*N;
+                        normalComponent = -sqrt(D)*scene_intersection.N;
                         Vector transmittedDirection = normalComponent + tangentialComponent; //
                         transmittedDirection.normalize();
 
                         // Fresnel's law
                         double k0 = pow(n1 - n2, 2) / pow(n1 + n2, 2);
-                        double R = k0 + (1 - k0) * pow(1 - abs(dot(N, omega_i)), 5);
+                        double R = k0 + (1 - k0) * pow(1 - abs(dot(scene_intersection.N, omega_i)), 5);
                         double T = 1- R;
 
                         // Solution (Leal gave me the hint)
-                        Vector reflectDir = ray.u - (2 * dot(ray.u, N) * N);
-                        Ray reflectedRay(P + 1e-4 * N, reflectDir);
+                        Vector reflectDir = ray.u - (2 * dot(ray.u, scene_intersection.N) * scene_intersection.N);
+                        Ray reflectedRay(scene_intersection.P + 1e-4 * scene_intersection.N, reflectDir);
 
-                        Ray refracted_ray = Ray(P - 1e-4 * N, transmittedDirection);
+                        Ray refracted_ray = Ray(scene_intersection.P - 1e-4 * scene_intersection.N, transmittedDirection);
 
                         return R * getColor(reflectedRay, bounce_number-1, scene, light_position, I) + T * getColor(refracted_ray, bounce_number - 1, scene, light_position, I);
 
@@ -721,16 +614,16 @@ class Scene {
                     Vector Lo(0., 0., 0.);
                     // add direct lighting;
                     double visibility = 1.; // computes the visibility term by launching a ray towards the light source
-                    /*
-                    if (isShadow(scene, light_position, P, N, t)) {
+                    
+                    if (isShadow(scene, light_position, scene_intersection.P, scene_intersection.N, scene_intersection.t)) {
                         visibility = 0.;
                     }
-                    */
-                    Vector lightDir = light_position - P;
+                    
+                    Vector lightDir = light_position - scene_intersection.P;
                     double lightDist = lightDir.norm();
-                    Vector albedo = objects[id]->albedo;
+                    Vector albedo = objects[scene_intersection.index]->albedo;
                     Vector omega_i = lightDir/lightDir.norm();
-                    double dot_product = std::max(dot(N, omega_i), 0.); // make sure not negative
+                    double dot_product = std::max(dot(scene_intersection.N, omega_i), 0.); // make sure not negative
                     Lo = (I/(4 * PI * lightDir.norm2())) * (albedo / PI) * visibility * dot_product;
 
                     // add indirect lighting
@@ -768,8 +661,8 @@ int main() {
         Vector del2 = random_cos(del1);
         std::cout << "del2 = " << del2[0] << ", " << del2[1] << ", " << del2[2] << std::endl;
     */
-    int W = 512; //512;
-    int H = 512; // 512;
+    int W = 64; //512;
+    int H = 64; // 512;
     Vector camera_origin(0, 0, 55);
     double fov = 60 * PI / 180; // make sure radians not degrees
     /*
@@ -781,7 +674,7 @@ int main() {
     */
     double I = 1E5; // intensity
     Vector light_position(-10, 20, 40);
-    int nb_rays_per_pixel = 4;
+    int nb_rays_per_pixel = 1;
     
     Object* S1 = new Sphere(Vector(0,0,1000), 940, Vector(0.9, 0.4, 0.3), false, false); // wall behind camera wall
     Object* S2 = new Sphere(Vector(0,-1000,0), 990, Vector(0.3, 0.4, 0.7), false, false); // floor
@@ -807,12 +700,14 @@ int main() {
     // TriangleMesh cat_mesh(0.6, Vector(0, -10, 0), Vector(1., 1., 1.));
     // cat_mesh.readOBJ("cat.obj");
 
-    TriangleMesh cat_mesh(Vector(1., 1., 1.), 0.6, Vector(0, -10, 0), false, false);
+    //TriangleMesh* cat_mesh = new TriangleMesh(0.6, Vector(0, -10, 0), Vector(1., 1., 1.));
+    TriangleMesh cat_mesh(0.6, Vector(0, -10, 0), Vector(1., 1., 1.));
+    //cat_mesh->readOBJ("cat.obj");
     cat_mesh.readOBJ("cat.obj");
 
+    //objects.push_back(cat_mesh);
     objects.push_back(&cat_mesh);
 
-    // Call mesh bvh here
     Scene scene(objects);
  
     std::vector<unsigned char> image(W * H * 3, 0);
@@ -837,9 +732,9 @@ int main() {
             }
             Vector color = pixelColor;
             // Vector color = scene.getColor(r, 2, scene, light_position, I);
-            image[(i * W + j) * 3 + 0] = std::min(255., std::pow(color[0] /nb_rays_per_pixel, 1.0/2.2) * 255.);
-            image[(i * W + j) * 3 + 1] = std::min(255., std::pow(color[1] /nb_rays_per_pixel, 1.0/2.2) * 255.);
-            image[(i * W + j) * 3 + 2] = std::min(255., std::pow(color[2] /nb_rays_per_pixel, 1.0/2.2) * 255.);
+            image[(i * W + j) * 3 + 0] = std::min(255., std::pow(color[0] /4., 1.0/2.2) * 255.);
+            image[(i * W + j) * 3 + 1] = std::min(255., std::pow(color[1] /4., 1.0/2.2) * 255.);
+            image[(i * W + j) * 3 + 2] = std::min(255., std::pow(color[2] /4., 1.0/2.2) * 255.);
         }
     }
     stbi_write_png("image.png", W, H, 3, &image[0], 0);
