@@ -738,7 +738,7 @@ class Scene {
                         double R = k0 + (1 - k0) * pow(1 - abs(dot(N, omega_i)), 5);
                         double T = 1- R;
 
-                        // Solution (Leal gave me the hint)
+                        // Solution (Leal Koksal gave me a hint to help code this)
                         Vector reflectDir = ray.u - (2 * dot(ray.u, N) * N);
                         Ray reflectedRay(P + 1e-4 * N, reflectDir);
 
