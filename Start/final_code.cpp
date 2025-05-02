@@ -3,6 +3,9 @@
 using namespace std::chrono;
 #include <limits>
 #include <iostream>
+#include <tuple>
+#include <list>
+
 #include <random>
 static std::default_random_engine engine(10); // random seed = 10
 static std::uniform_real_distribution<double> uniform(0, 1);
@@ -87,18 +90,23 @@ Vector random_cos(const Vector &N) {
     double y = sin(2 * PI * r1) * sqrt(1 - r2);
     double z = sqrt(r2);
 
-    Vector T1 = N;
-    double min_value_index_N = 0; // std::min(abs(N[0]), abs(N[1]), abs(N[2]));
-    for (int i = 1; i < 3; i++) {
+    Vector T1;
+    double min_value_index_N = 0;
+    double min_value = std::numeric_limits<double>::max();
+    for (int i = 0; i < 3; i++) {
         if (abs(N[i]) < abs(N[min_value_index_N])) {
             min_value_index_N = i;
+            min_value = abs(N[i]);
         }
     }
+
     T1[min_value_index_N] = 0.;
     int index_swap_1 = abs(min_value_index_N - 1);
     int index_swap_2 = abs(min_value_index_N - 2);
-    T1[index_swap_1] = N[index_swap_2];
-    T1[index_swap_2] = -1 * N[index_swap_1];
+    double temp = T1[index_swap_1];
+    T1[index_swap_1] = T1[index_swap_2];
+    T1[index_swap_2] = -1 * temp;
+    
     Vector T2 = cross(N, T1);
     Vector V = x * T1 + y * T2 + z * N;
     return V;
@@ -109,17 +117,6 @@ public:
     Ray(const Vector& O, const Vector &u): origin(O), u(u) {};
     Vector origin;
     Vector u;
-};
-
-class Intersection {
-    public:
-        Intersection(bool intersected, Vector P, Vector N, double t, int index) : intersected(intersected), P(P), N(N), t(t), index(index) {};
-
-        bool intersected;
-        Vector P;
-        Vector N;
-        double t;
-        int index;
 };
 
 class Object {
@@ -133,7 +130,7 @@ class Object {
 };
 
 // _________________________________________________________________________________________________________________________________________________
-// This code was taken from: https://pastebin.com/CAgp9r15
+// Parts of this code was taken from: https://pastebin.com/CAgp9r15
 
 #include <string>
 #include <iostream>
@@ -143,110 +140,33 @@ class Object {
 
 class BoundingBox {
 public:
-    BoundingBox(Vector Bmin = Vector(), Vector Bmax = Vector()) : Bmin(Bmin), Bmax(Bmax) {}
+    Vector B_min;
+    Vector B_max;
 
-    Vector Bmin;
-    Vector Bmax;
-
-    bool intersect(const Ray& ray, double& tNear, double& tFar) const {
-        tNear = -std::numeric_limits<double>::infinity();
-        tFar = std::numeric_limits<double>::infinity();
-
-        for (int i = 0; i < 3; i++) {
-            double invD = 1.0 / ray.u[i];
-
-            double t0 = (Bmin[i] - ray.origin[i]) * invD;
-            double t1 = (Bmax[i] - ray.origin[i]) * invD;
-
-            if (invD < 0.0) std::swap(t0, t1);
-
-            tNear = std::max(tNear, t0);
-            tFar = std::min(tFar, t1);
-
-            if (tNear > tFar) return false;  // No intersection.
-        }
-        return tFar >= 0.0; // Intersection must be in front of ray origin.
+    explicit BoundingBox(Vector min = Vector(), Vector max = Vector()) {
+        B_min = min;
+        B_max = max;
     }
+
+    bool bounding_box_intersects(const Ray& r, double& t) const {
+        double t_min = -std::numeric_limits<double>::infinity();
+        double t_max = std::numeric_limits<double>::infinity();
+    
+        for (int i = 0; i < 3; ++i) {
+            double t0 = (B_min[i] - r.origin[i]) / r.u[i];
+            double t1 = (B_max[i] - r.origin[i]) / r.u[i];
+            if (t0 > t1) std::swap(t0, t1);
+            t_min = std::max(t_min, t0);
+            t_max = std::min(t_max, t1);
+    
+            if (t_max < t_min || t_max < 0) return false;
+        }
+    
+        t = t_min;
+        return true;
+    }
+    
 };
-
-/*
-class BVH {
-public:
-    BoundingBox box;
-    BVH* left, * right;
-
-    // Define a scale and translate function
-
-
-    void build_bvh(BVH* current, int first, int last) {
-        current->first = first;
-        current->last = last;
-        current->box = compuute_bbox(first, llast);
-        current->left = NULL;
-        current->right = NULL;
-
-        if (last-first < 5) return;
-
-        Vector diagonal = current->box.M - current->box.m;
-        int axis = 2;
-        if ((diagonal[0] >= diagonal[1]) && (diagonal[0] >= diagonal[2])) {
-            axis = 0;
-        }
-        else {
-            if ((diagonal[1] >= diagonal[0]) && (diagonal[1] >= diagonal[2])) {
-                axis = 1;
-            }
-        }
-
-        double middle = current->box.m[axis] + 0.5 * diagonal[axis];
-        int pivot = first;
-        for (int i=first; i < last; i++) {
-            double bary = vertices[indices[i].vtxi][axis] + vertices[indices[i].vtxj][axis] + vertices[indices[i].vtxk][axis];
-            if (bary < middle) {
-                std::swap(indices[i], indices[pivot]);
-                pivot++;
-            }
-        }
-        if ((pivot <=first) || (pivot >= last)) return; // if pivot is too much to the left
-
-        current->left = new BVH();
-        current->right = new BVH();
-        build_bvh(current->left, first, pivot);
-        build_bvh(current->right, pivot, last);
-    }
-
-    BoundingBox computeBbox() {
-    }
-
-    bool intersect(const Ray& r, Vector& P, Vector& N, double& t) const {
-        if (!bvh.box.intersect(r)) return false;
-
-        std::list<const BVH*> l;
-        l.push_back(&bvh);
-        while(!l.empty()) {
-            const BVH* cur = l.back();
-            l.pop_back();
-            if (cur->left) { // not a leaf
-                if (cur->left->box.intersect(r)) {
-                    l.push_back(cur->left);
-
-                }
-                if (cur->right->box.intersect(r)) {
-                    l.push_back(cur->right);
-                    
-                }
-            }
-            else {
-                // copy all the code
-                for (int i = cur->first; i < cur->last; i++) {
-                    Vector A ...
-                }
-            }
-        }
-    }
-
-};
-*/
  
 class TriangleIndices {
 public:
@@ -260,30 +180,90 @@ public:
  
  
 class TriangleMesh : public Object {
-    double scaling_factor;
-    Vector translation;
     // Vector color;
     // double refractive_index;
     // bool reflects;
 public:
-    std::vector<TriangleIndices> indices;
-    std::vector<Vector> vertices;
-    std::vector<Vector> normals;
-    std::vector<Vector> uvs;
-    std::vector<Vector> vertexcolors;
-    // BoundingBox bbox;
-    BoundingBox bbox = computeBbox(0, indices.size());
+    class BVH {
+    public:
+        BoundingBox box;
+        BVH* left, * right;
+        int first, last;
+        TriangleMesh* mesh;
+    
+        // Define a scale and translate function
+    
+        // Leal Koksal helped me with this function as there was a bug I did not manage to solve on my own
+        BoundingBox computeBbox(int starting_triangle, int ending_triangle) {
+            Vector vertex = this->mesh->scaling_factor * this->mesh->vertices[this->mesh->indices[starting_triangle].vtxk] + this->mesh->translation;
+            BoundingBox initial_bbox = BoundingBox(vertex, vertex);
 
-    ~TriangleMesh() {}
-    // TriangleMesh(double scaling_factor, Vector translation, Vector color = Vector(1., 1., 1.), double refractive_index = 1., bool reflects = false) : scaling_factor(scaling_factor), translation(translation), color(color), refractive_index(refractive_index), reflects(reflects) {};
-    /*
-    TriangleMesh(double scaling_factor, Vector translation, Vector albedo, double isMirror = false, bool isTransparent = false) : scaling_factor(scaling_factor), translation(translation) {
-        this->albedo = albedo;
-        this->isMirror = isMirror;
-        this->isTransparent = isTransparent;
+            for (int i=starting_triangle; i<ending_triangle; i++) {
+                auto triangle_vertices = {
+                    this->mesh->vertices[this->mesh->indices[i].vtxi], 
+                    this->mesh->vertices[this->mesh->indices[i].vtxj],
+                    this->mesh->vertices[this->mesh->indices[i].vtxk]
+                };
+                for (auto const& v : triangle_vertices) {
+                    Vector vertex = this->mesh->scaling_factor * v + this->mesh->translation;
+
+                    for (int k = 0; k < 3; ++k) {
+                        initial_bbox.B_min[k] = std::min(initial_bbox.B_min[k], vertex[k]);
+                        initial_bbox.B_max[k] = std::max(initial_bbox.B_max[k], vertex[k]);
+                    }
+                }
+            }
+            return initial_bbox;
+        }
+    
+        void build_bvh(BVH* current, int first, int last) {
+            current->first = first;
+            current->last = last;
+            current->box = computeBbox(first, last);
+            // current->left = NULL;
+            // current->right = NULL;
+    
+            if (last-first < 5) return;
+    
+            Vector diagonal = current->box.B_max - current->box.B_min;
+    
+            // Finding longest axis to make it efficient
+            int axis = 2;
+            if ((diagonal[0] >= diagonal[1]) && (diagonal[0] >= diagonal[2])) {
+                axis = 0;
+            }
+            else {
+                if ((diagonal[1] >= diagonal[0]) && (diagonal[1] >= diagonal[2])) {
+                    axis = 1;
+                }
+            }
+    
+            double middle = current->box.B_min[axis] + 0.5 * diagonal[axis];
+            int pivot = first;
+            for (int i=first; i < last; i++) {
+                // Barycentre
+                double bary = (mesh->vertices[mesh->indices[i].vtxi][axis] + mesh->vertices[mesh->indices[i].vtxj][axis] + mesh->vertices[mesh->indices[i].vtxk][axis]) / 3;
+                if (bary < middle) {
+                    std::swap(mesh->indices[i], mesh->indices[pivot]);
+                    pivot++;
+                }
+            }
+            if ((pivot <=first) || (pivot >= last - 1)) return; // if pivot is too much to the left
+    
+            current->left = new BVH();
+            current->right = new BVH();
+            build_bvh(current->left, first, pivot);
+            build_bvh(current->right, pivot, last);
+        }
+    
     };
-    */
-    TriangleMesh(Vector albedo, double scaling_factor, Vector translation, double isMirror = false, bool isTransparent = false) : Object(albedo, isMirror, isTransparent), scaling_factor(scaling_factor), translation(translation) {};
+
+    BVH bvh;
+    double scaling_factor;
+    Vector translation;
+    ~TriangleMesh() {}
+    TriangleMesh(double scaling_factor, Vector translation, Vector albedo, double isMirror = false, bool isTransparent = false) : Object(albedo, isMirror, isTransparent), scaling_factor(scaling_factor), translation(translation) {}; //, root(new Node) {};
+
 
     void readOBJ(const char* obj) {
         char matfile[255];
@@ -320,6 +300,14 @@ public:
                 } else {
                     sscanf(line, "v %lf %lf %lf\n", &vec[0], &vec[1], &vec[2]);
                     vertices.push_back(vec);
+                }
+
+                Vector transformed = scaling_factor * vec + translation;
+
+                // expand the bounding box
+                for (int k = 0; k < 3; ++k) {
+                    bbox.B_min[k] = std::min(bbox.B_min[k], transformed[k]);
+                    bbox.B_max[k] = std::max(bbox.B_max[k], transformed[k]);
                 }
             }
             if (line[0] == 'v' && line[1] == 'n') {
@@ -454,87 +442,21 @@ public:
             }
         }
         fclose(f);
- 
+
+        bvh.mesh = this;
+        bvh.build_bvh(&bvh, 0, indices.size());
     }
 
-    // Compute the bounding box of the mesh
-    BoundingBox computeBbox(int starting_triangle, int ending_triangle) {
-        double minX = std::numeric_limits<double>::max();
-        double minY = std::numeric_limits<double>::max();
-        double minZ = std::numeric_limits<double>::max();
-        double maxX = std::numeric_limits<double>::min();
-        double maxY = std::numeric_limits<double>::min();
-        double maxZ = std::numeric_limits<double>::min();
-
-        for (int i=starting_triangle; i<ending_triangle; i++) {
-            auto triangle_vertices = {
-                this->vertices[this->indices[i].vtxi],
-                this->vertices[this->indices[i].vtxj],
-                this->vertices[this->indices[i].vtxk]
-            };
-            for (auto const& v : triangle_vertices) {
-                Vector Vertex = scaling_factor * v + translation;
-                minX = std::min(minX, Vertex[0]);
-                maxX = std::max(maxX, Vertex[0]);
-                minY = std::min(minY, Vertex[1]);
-                maxY = std::max(maxY, Vertex[1]);
-                minZ = std::min(minZ, Vertex[2]);
-                maxZ = std::max(maxZ, Vertex[2]);
-            }
-        }
-
-        return BoundingBox(Vector(minX, minY, minZ), Vector(maxX, maxY, maxZ));
-    }
-
-    // BoundingBoxIntersection
-    bool intersect(const Ray& r, Vector &P, Vector& N, double &t) const {
-        double tNear, tFar;
-        if (!bbox.intersect(r, tNear, tFar)) {
-            return false; // Skip expensive triangle tests.
-        }
-    
-        t = std::numeric_limits<double>::max();
-        bool has_intersection = false;
-    
-        for (int i = 0; i < indices.size(); i++) {
-            const Vector& A = scaling_factor * vertices[indices[i].vtxi] + translation;
-            const Vector& B = scaling_factor * vertices[indices[i].vtxj] + translation;
-            const Vector& C = scaling_factor * vertices[indices[i].vtxk] + translation;
-    
-            const Vector e1 = B - A;
-            const Vector e2 = C - A;
-            Vector localN = cross(e1, e2);
-            Vector AOcrossU = cross(A - r.origin, r.u);
-            double det = dot(r.u, localN);
-    
-            if (fabs(det) < 1e-8) continue; // Avoid division by 0.
-    
-            double localt = dot(A - r.origin, localN) / det;
-            if (localt < 0.0 || localt >= t) continue;
-    
-            double beta = dot(e2, AOcrossU) / det;
-            if (beta < 0.0 || beta > 1.0) continue;
-    
-            double gamma = -dot(e1, AOcrossU) / det;
-            if (gamma < 0.0 || gamma > 1.0) continue;
-    
-            double alpha = 1.0 - beta - gamma;
-            if (alpha < 0.0) continue;
-    
-            // Valid intersection found
-            t = localt;
-            P = r.origin + t * r.u;
-            N = localN; //.normalized();
-            N.normalize();
-            has_intersection = true;
-        }
-        return has_intersection;
-    }
-
+    // Bounding Box version
     /*
     bool intersect(const Ray& r, Vector &P, Vector&N, double &t) const override {
-    // bool intersect(const Ray& r, Vector &P, Vector &N, double &t) {
+        // bool intersect(const Ray& r, Vector &P, Vector &N, double &t) {
         t = std::numeric_limits<double>::max();
+        double t_box;
+        if (!bbox.bounding_box_intersects(r, t_box)) {
+            return false;
+        }
+
         bool has_intersection = false;
 
         for (int i = 0; i < indices.size(); i++) {
@@ -575,6 +497,76 @@ public:
         return has_intersection;
     }
     */
+
+    // BVH version
+    bool intersect(const Ray& r, Vector& P, Vector& N, double& t) const {
+        bool result = false;
+        t = std::numeric_limits<double>::max();
+        double t_box;
+        if (!bvh.box.bounding_box_intersects(r, t_box)) return false;
+
+        std::list<const BVH*> nodes_to_visit;
+        nodes_to_visit.push_back(&bvh);
+        while(!nodes_to_visit.empty()) {
+            const BVH* cur = nodes_to_visit.back();
+            nodes_to_visit.pop_back();
+            if (cur->left) { // not a leaf
+                // double t_box;
+                if (cur->left->box.bounding_box_intersects(r, t_box)) {
+                    if (t_box < t) {
+                        nodes_to_visit.push_back(cur->left);
+                    }
+                }
+                // double t_box;
+                if (cur->right->box.bounding_box_intersects(r, t_box)) {
+                    if (t_box < t) {
+                        nodes_to_visit.push_back(cur->right);
+                    }  
+                }
+            }
+            else {
+                // copy all the code
+                bool has_intersection = false;
+                for (int i = cur->first; i < cur->last; i++) {
+                    const Vector& A = scaling_factor * vertices[indices[i].vtxi] + translation; // put scaling and translation in a separate function
+                    const Vector& B = scaling_factor * vertices[indices[i].vtxj] + translation;
+                    const Vector& C = scaling_factor * vertices[indices[i].vtxk] + translation;
+
+                    const Vector e1 = B - A;
+                    const Vector e2 = C - A;
+                    Vector localN = cross (e1, e2);
+                    Vector AOcrossU = cross(A-r.origin, r.u);
+
+                    double localt = dot(A-r.origin, localN) / dot(r.u, localN); // implement the formula from the slides
+                    double beta = dot(e2, AOcrossU) / dot(r.u, localN); // implement formula from slides
+                    double gamma = -dot(e1, AOcrossU) / dot(r.u, localN); // implement the formula from the slides
+                    double alpha = 1 - beta - gamma; // implement the formula from the slides
+
+                    if (alpha >= 0.0f && alpha <= 1.0f && beta >= 0.0f && beta <= 1.0f && gamma >= 0.0f && gamma <= 1.0f && localt >= 0.0f && localt < t) {
+                        t = localt;
+                        P = r.origin + t * r.u;
+                        N = localN;
+                        N.normalize();
+                        has_intersection = true;
+                    }
+                    // return has_intersection;
+                }
+                if (has_intersection) {
+                    result = true;
+                    // return true;
+                }
+            }
+        }
+        return result;
+    }
+ 
+    std::vector<TriangleIndices> indices;
+    std::vector<Vector> vertices;
+    std::vector<Vector> normals;
+    std::vector<Vector> uvs;
+    std::vector<Vector> vertexcolors;
+    BoundingBox bbox;
+    
 };
 
 // _________________________________________________________________________________________________________________________________________________
@@ -660,6 +652,17 @@ class Scene {
             return result;
         }
 
+        /*
+        void intersect(const Ray& r, Vector& P, Vector& N) {
+            double t = std::numeric_limits<double>::max(); // wrong 
+            for (int i = 0; i < objects.size(); i++) {
+
+                Vector localN, localP; // values for current local object
+                double localt;
+                objects[i].intersect(r, localP, localN);
+            }
+        }
+        */
         bool isShadow(Scene& scene, const Vector& light_position, const Vector& P, const Vector& N, double& t) {
             Vector lightDir = light_position - P;
             double lightDist = lightDir.norm();
@@ -773,9 +776,11 @@ class Scene {
                     Vector Lo(0., 0., 0.);
                     // add direct lighting;
                     double visibility = 1.; // computes the visibility term by launching a ray towards the light source
+        
                     if (isShadow(scene, light_position, P, N, t)) {
                         visibility = 0.;
                     }
+                
                     Vector lightDir = light_position - P;
                     double lightDist = lightDir.norm();
                     Vector albedo = objects[id]->albedo;
@@ -784,8 +789,8 @@ class Scene {
                     Lo = (I/(4 * PI * lightDir.norm2())) * (albedo / PI) * visibility * dot_product;
 
                     // add indirect lighting
-                    // Ray randomRay = Ray(P, random_cos(N));; // randomly sample ray using random_cos
-                    // Lo = Lo + albedo * getColor(randomRay, bounce_number-1, scene, light_position, I);
+                    Ray randomRay = Ray(P, random_cos(N));; // randomly sample ray using random_cos
+                    Lo = Lo + albedo * getColor(randomRay, bounce_number-1, scene, light_position, I);
                     
                     /*
                         Vector lightDir = light_position - P;
@@ -818,17 +823,17 @@ int main() {
         Vector del2 = random_cos(del1);
         std::cout << "del2 = " << del2[0] << ", " << del2[1] << ", " << del2[2] << std::endl;
     */
-    int W = 64; //512;
-    int H = 64; // 512;
+    int W = 256; //512;
+    int H = 256; // 512;
     Vector camera_origin(0, 0, 55);
     double fov = 60 * PI / 180; // make sure radians not degrees
-    /*
+
     Object* S_mirror = new Sphere(Vector(-20,0,0), 10, Vector(0.3, 0.5, 0.8), false, true);
     Object* S_transparent = new Sphere(Vector(0,0,0), 10, Vector(0.5, 0.5, 0.5), true, false);
     Object* S_transparent_hollow_outer = new Sphere(Vector(20,0,0), 10, Vector(0.7, 0.2, 0.5), true, false);
-    Object* S_transparent_hollow_inner = new Sphere(Vector(20,0,0), 9.8, Vector(0.7, 0.2, 0.5), true, false, true);
+    // Object* S_transparent_hollow_inner = new Sphere(Vector(20,0,0), 9.8, Vector(0.7, 0.2, 0.5), true, false, true);
     Vector albedo(0.5, 0.5, 0.5); // grey sphere
-    */
+
     double I = 1E5; // intensity
     Vector light_position(-10, 20, 40);
     int nb_rays_per_pixel = 1;
@@ -840,12 +845,12 @@ int main() {
     Object* S5 = new Sphere(Vector(-1000,0,0), 940, Vector(0.9, 0.2, 0.9), false, false); // left wall
     Object* S6 = new Sphere(Vector(1000,0,0), 940, Vector(0.6, 0.5, 0.1), false, false); // right wall
     std::vector<Object*> objects; // = scene.objects;
-    /*
-    objects.push_back(S_transparent);
-    objects.push_back(S_mirror);
-    objects.push_back(S_transparent_hollow_outer);
-    objects.push_back(S_transparent_hollow_inner);
-    */
+
+    // objects.push_back(S_transparent);
+    // objects.push_back(S_mirror);
+    // objects.push_back(S_transparent_hollow_outer);
+    // objects.push_back(S_transparent_hollow_inner);
+
     objects.push_back(S1);
     objects.push_back(S2);
     objects.push_back(S3);
@@ -854,31 +859,21 @@ int main() {
     objects.push_back(S6);
     
     // Cat
-    // TriangleMesh cat_mesh(0.6, Vector(0, -10, 0), Vector(1., 1., 1.));
-    // cat_mesh.readOBJ("cat.obj");
-
-    TriangleMesh cat_mesh(Vector(1., 1., 1.), 0.6, Vector(0, -10, 0), false, false);
+    TriangleMesh cat_mesh(0.6, Vector(0, -10, 0), Vector(1., 1., 1.));
     cat_mesh.readOBJ("cat.obj");
 
     objects.push_back(&cat_mesh);
 
-    // Call mesh bvh here
     Scene scene(objects);
  
     std::vector<unsigned char> image(W * H * 3, 0);
     #pragma omp parallel for schedule(dynamic, 1)
     for (int i = 0; i < H; i++) {
         for (int j = 0; j < W; j++) {
-            // double d = -W/(2*tan(fov/2));
-            // Vector ray_direction(j-W/2+0.5, H/2-i+0.5, d);
-            // ray_direction.normalize();
-            // Ray r(camera_origin, ray_direction);
             Vector pixelColor = Vector(0., 0., 0.);
             double x, y;
             for (int k=0; k<nb_rays_per_pixel; k++) {
                 boxMuller(0.5, x, y);
-                // double d = -W/(2*tan(fov/2));
-                // Vector ray_direction(j-W/2+0.5, H/2-i+0.5, d);
                 Vector rand_dir = Vector(camera_origin[0] + (j+x) + 0.5 - W/2, camera_origin[1] - (i+y) - 0.5 + H/2, camera_origin[2] - W/(2*tan(fov/2)));  // as before but targetting pixel (i, j) + boxMuller() * spread
                 rand_dir = rand_dir - camera_origin;
                 rand_dir.normalize();
@@ -886,10 +881,9 @@ int main() {
                 pixelColor = pixelColor + scene.getColor(ray, nb_rays_per_pixel, scene, light_position, I);
             }
             Vector color = pixelColor;
-            // Vector color = scene.getColor(r, 2, scene, light_position, I);
-            image[(i * W + j) * 3 + 0] = std::min(255., std::pow(color[0] /nb_rays_per_pixel, 1.0/2.2) * 255.);
-            image[(i * W + j) * 3 + 1] = std::min(255., std::pow(color[1] /nb_rays_per_pixel, 1.0/2.2) * 255.);
-            image[(i * W + j) * 3 + 2] = std::min(255., std::pow(color[2] /nb_rays_per_pixel, 1.0/2.2) * 255.);
+            image[(i * W + j) * 3 + 0] = std::min(255., std::pow(color[0] /4., 1.0/2.2) * 255.);
+            image[(i * W + j) * 3 + 1] = std::min(255., std::pow(color[1] /4., 1.0/2.2) * 255.);
+            image[(i * W + j) * 3 + 2] = std::min(255., std::pow(color[2] /4., 1.0/2.2) * 255.);
         }
     }
     stbi_write_png("image.png", W, H, 3, &image[0], 0);
